@@ -113,10 +113,16 @@ $('pr').onclick=async function(){
   try{await link();if(!chr)throw 0}catch(e){st('Связь потеряна, нажмите «Подключить принтер» заново.');upd();return}
   try{
     var gap=+$('g').value||0,dir=$('d').checked?1:0,enc=new TextEncoder();
-    var head=enc.encode('SIZE '+bmp.mw+' mm,'+bmp.mh+' mm\r\nGAP '+gap+' mm,0 mm\r\nDIRECTION '+dir+',0\r\nDENSITY 10\r\nSPEED 4\r\nCLS\r\nBITMAP 0,0,'+bmp.wb+','+bmp.h+',0,');
-    var tail=enc.encode('\r\nPRINT 1,1\r\n');
-    var all=new Uint8Array(head.length+bmp.data.length+tail.length);
-    all.set(head,0);all.set(bmp.data,head.length);all.set(tail,head.length+bmp.data.length);
+    var ps=[enc.encode('SIZE '+bmp.mw+' mm,'+bmp.mh+' mm\r\nGAP '+gap+' mm,0 mm\r\nDIRECTION '+dir+',0\r\nDENSITY 10\r\nSPEED 4\r\nCLS\r\n')];
+    for(var y=0;y<bmp.h;y+=48){ // картинка отправляется полосками по 48 строк
+      var rr=Math.min(48,bmp.h-y);
+      ps.push(enc.encode('BITMAP 0,'+y+','+bmp.wb+','+rr+',0,'));
+      ps.push(bmp.data.subarray(y*bmp.wb,(y+rr)*bmp.wb));
+      ps.push(enc.encode('\r\n'));
+    }
+    ps.push(enc.encode('PRINT 1,1\r\n'));
+    var tot=0;ps.forEach(function(p){tot+=p.length});
+    var all=new Uint8Array(tot),pos=0;ps.forEach(function(p){all.set(p,pos);pos+=p.length});
     var n=100,re=0;
     for(var o=0;o<all.length;){
       var part=all.slice(o,o+n);
