@@ -12,11 +12,16 @@ body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.4 system-ui,-appl
 h1{font-size:22px;margin:0 0 10px}
 label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}
 select,input[type=file],input[type=number]{width:100%;font-size:16px;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);box-sizing:border-box}
+.row{display:flex;gap:10px}
+.row>div{flex:1;min-width:0}
 .ck{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:16px}
 .ck input{width:22px;height:22px}
 button{width:100%;margin-top:12px;padding:15px;font-size:18px;font-weight:600;border:0;border-radius:12px;background:var(--ac);color:#fff}
 button.s{background:var(--bd);color:var(--fg)}
+button.m{padding:11px;font-size:15px}
 button:disabled{opacity:.4}
+details{margin-top:14px;border-top:1px solid var(--bd);padding-top:8px}
+summary{color:var(--mut);font-size:15px;padding:6px 0}
 #st{margin-top:12px;color:var(--mut);font-size:15px;min-height:22px}
 #pv{display:block;max-width:100%;margin:12px auto 0;border:1px solid var(--bd);background:#fff;image-rendering:pixelated}
 </style></head><body>
@@ -31,14 +36,33 @@ button:disabled{opacity:.4}
 <option value="bl">ОБРАЗЕЦ КУРЬЕРА (внизу слева)</option>
 <option value="tl">ОБРАЗЕЦ ПАРТНЕРА (вверху слева)</option>
 </select>
-<label>Размер бумаги</label>
-<select id="z"><option value="50x48">50 × 48 мм</option><option value="58x40">58 × 40 мм</option><option value="58x30">58 × 30 мм</option><option value="40x30">40 × 30 мм</option></select>
-<label>Зазор между этикетками, мм (0 для сплошной ленты)</label>
-<input type="number" id="g" value="2" min="0" max="10" step="0.5">
+
+<div class="row">
+<div><label>Ширина этикетки, мм</label><input type="number" id="mw" value="55" min="10" max="110" step="0.5"></div>
+<div><label>Высота этикетки, мм</label><input type="number" id="mh" value="37" min="10" max="200" step="0.5"></div>
+</div>
+<div class="row">
+<div><label>Зазор, мм (0 — сплошная)</label><input type="number" id="g" value="2" min="0" max="10" step="0.5"></div>
+<div><label>Ширина печати, мм</label><input type="number" id="hd" value="48" min="20" max="110" step="0.5"></div>
+</div>
+<div class="row">
+<div><label>Смещение вправо, мм</label><input type="number" id="ox" value="0" min="0" max="20" step="0.5"></div>
+<div><label>Смещение вниз, мм</label><input type="number" id="oy" value="0" min="0" max="20" step="0.5"></div>
+</div>
 <div class="ck"><input type="checkbox" id="r"><span>Повернуть этикетку на 90°</span></div>
 <div class="ck"><input type="checkbox" id="d"><span>Печатать вверх ногами (если вышло перевёрнуто)</span></div>
+
 <canvas id="pv"></canvas>
 <button id="pr" disabled>2. Печать</button>
+
+<details>
+<summary>Настройка принтера</summary>
+<button class="s m" id="cal" disabled>Калибровка датчика (протянет несколько этикеток)</button>
+<button class="s m" id="tst" disabled>Тест: рамка по краю этикетки</button>
+<label>Плотность печати (1–15)</label>
+<input type="number" id="dn" value="10" min="1" max="15" step="1">
+</details>
+
 <div id="st">Сначала подключите принтер и выберите PDF</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -46,15 +70,26 @@ button:disabled{opacity:.4}
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 // рамки этикеток в точках для шаблона 1860x2631: [x0,x1,y0,y1], y сверху
 var B={br:[942,1818,1385,2610],bl:[21,897,1385,2610],tl:[21,897,51,1276]};
+var DPM=8; // 203 dpi = 8 точек на мм
 var $=function(i){return document.getElementById(i)};
 var file=null,bmp=null,chr=null,dev=null;
-var ids=['w','z','g','r','d'];
-try{var S=JSON.parse(localStorage.getItem('lbl')||'{}');ids.forEach(function(i){if(S[i]!==undefined){var e=$(i);if(e.type==='checkbox')e.checked=S[i];else e.value=S[i]}})}catch(e){}
-function save(){try{var o={};ids.forEach(function(i){var e=$(i);o[i]=e.type==='checkbox'?e.checked:e.value});localStorage.setItem('lbl',JSON.stringify(o))}catch(e){}}
+var ids=['w','mw','mh','g','hd','ox','oy','r','d','dn'];
+try{var S=JSON.parse(localStorage.getItem('lbl2')||'{}');ids.forEach(function(i){if(S[i]!==undefined){var e=$(i);if(e.type==='checkbox')e.checked=S[i];else e.value=S[i]}})}catch(e){}
+function save(){try{var o={};ids.forEach(function(i){var e=$(i);o[i]=e.type==='checkbox'?e.checked:e.value});localStorage.setItem('lbl2',JSON.stringify(o))}catch(e){}}
 function st(t){$('st').textContent=t}
-function upd(){$('pr').disabled=!(bmp&&chr)}
+function num(i,def){var v=parseFloat($(i).value);return isNaN(v)?def:v}
+function upd(){$('pr').disabled=!(bmp&&chr);$('cal').disabled=!chr;$('tst').disabled=!chr}
 ids.forEach(function(i){$(i).onchange=function(){save();if(file)build()}});
 $('f').onchange=function(e){file=e.target.files[0]||null;bmp=null;upd();if(file)build()};
+
+// общие параметры бумаги
+function paper(){
+  var mw=num('mw',55),mh=num('mh',37),hd=num('hd',48);
+  return {mw:mw,mh:mh,hd:Math.min(hd,mw),gap:num('g',2),dir:$('d').checked?1:0,dn:Math.max(1,Math.min(15,Math.round(num('dn',10))))};
+}
+function header(p){
+  return 'SIZE '+p.mw+' mm,'+p.mh+' mm\r\nGAP '+p.gap+' mm,0 mm\r\nDIRECTION '+p.dir+',0\r\nDENSITY '+p.dn+'\r\nSPEED 4\r\n';
+}
 
 async function build(){
   st('Готовлю этикетку...');
@@ -62,7 +97,11 @@ async function build(){
     var pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
     var pg=await pdf.getPage(1),v=pg.getViewport({scale:1}),W=v.width,H=v.height,b=B[$('w').value];
     var x0=b[0]/1860*W,y0=b[2]/2631*H,w=(b[1]-b[0])/1860*W,h=(b[3]-b[2])/2631*H;
-    var zz=$('z').value.split('x'),PW=+zz[0]*8,PH=+zz[1]*8,m=8,rot=$('r').checked;
+    var p=paper();
+    var ox=Math.round(num('ox',0)*DPM),oy=Math.round(num('oy',0)*DPM);
+    // область, в которую можно печатать (в точках): ширина — по головке, минус смещение
+    var PW=Math.max(16,Math.round(p.hd*DPM)-ox),PH=Math.max(16,Math.round(p.mh*DPM)-oy),m=8,rot=$('r').checked;
+    PW=Math.min(PW,Math.round(p.mw*DPM)-ox);
     var s=rot?Math.min((PW-2*m)/h,(PH-2*m)/w):Math.min((PW-2*m)/w,(PH-2*m)/h);
     var big=document.createElement('canvas'),vs=pg.getViewport({scale:s});
     big.width=Math.ceil(vs.width);big.height=Math.ceil(vs.height);
@@ -73,14 +112,14 @@ async function build(){
     if(!rot){c.translate(Math.round((PW-w*s)/2),Math.round((PH-h*s)/2));c.drawImage(big,x0*s,y0*s,w*s,h*s,0,0,w*s,h*s)}
     else{c.translate(Math.round((PW+h*s)/2),Math.round((PH-w*s)/2));c.rotate(Math.PI/2);c.drawImage(big,x0*s,y0*s,w*s,h*s,0,0,w*s,h*s)}
     c.restore();
-    var im=c.getImageData(0,0,PW,PH),p=im.data,wb=Math.ceil(PW/8),out=new Uint8Array(wb*PH).fill(255);
+    var im=c.getImageData(0,0,PW,PH),d=im.data,wb=Math.ceil(PW/8),out=new Uint8Array(wb*PH).fill(255);
     for(var y=0;y<PH;y++)for(var x=0;x<PW;x++){
-      var i=(y*PW+x)*4,g=.299*p[i]+.587*p[i+1]+.114*p[i+2],blk=g<170;
-      p[i]=p[i+1]=p[i+2]=blk?0:255;p[i+3]=255;
+      var i=(y*PW+x)*4,g=.299*d[i]+.587*d[i+1]+.114*d[i+2],blk=g<170;
+      d[i]=d[i+1]=d[i+2]=blk?0:255;d[i+3]=255;
       if(blk)out[y*wb+(x>>3)]&=~(0x80>>(x&7)); // в TSPL 0 = чёрная точка
     }
     c.putImageData(im,0,0);
-    bmp={data:out,wb:wb,h:PH,mw:+zz[0],mh:+zz[1]};
+    bmp={data:out,wb:wb,h:PH,x:ox,y:oy};
     st('Готово. Нажмите «Печать».');upd();
   }catch(e){st('Не удалось прочитать PDF: '+(e.message||e))}
 }
@@ -107,36 +146,71 @@ $('bc').onclick=async function(){
   }catch(e){st('Подключение не удалось: '+(e.message||e))}
 };
 
+// отправка набора байтов в принтер кусками
+async function sendAll(ps){
+  var tot=0;ps.forEach(function(p){tot+=p.length});
+  var all=new Uint8Array(tot),pos=0;ps.forEach(function(p){all.set(p,pos);pos+=p.length});
+  var n=100,re=0;
+  for(var o=0;o<all.length;){
+    var part=all.slice(o,o+n);
+    try{if(chr.properties.write)await chr.writeValue(part);else await chr.writeValueWithoutResponse(part)}
+    catch(e){
+      if(/no longer valid|disconnected/i.test(e.message||'')&&re<2){re++;await link();if(!chr)throw e;continue}
+      if(n>20){n=20;continue}throw e}
+    o+=part.length;
+    st('Передача: '+Math.round(o/all.length*100)+'%');
+    await new Promise(function(r){setTimeout(r,chr.properties.write?5:30)});
+  }
+  await new Promise(function(r){setTimeout(r,500)});
+}
+async function reconnect(){
+  try{await link();if(!chr)throw 0;return true}
+  catch(e){st('Связь потеряна, нажмите «Подключить принтер» заново.');upd();return false}
+}
+
 $('pr').onclick=async function(){
   if(!(bmp&&chr))return;
   $('pr').disabled=true;st('Печатаю...');
-  try{await link();if(!chr)throw 0}catch(e){st('Связь потеряна, нажмите «Подключить принтер» заново.');upd();return}
+  if(!await reconnect())return;
   try{
-    var gap=+$('g').value||0,dir=$('d').checked?1:0,enc=new TextEncoder();
-    var ps=[enc.encode('SIZE '+bmp.mw+' mm,'+bmp.mh+' mm\r\nGAP '+gap+' mm,0 mm\r\nDIRECTION '+dir+',0\r\nDENSITY 10\r\nSPEED 4\r\nCLS\r\n')];
+    var p=paper(),enc=new TextEncoder();
+    var ps=[enc.encode(header(p)+'CLS\r\n')];
     for(var y=0;y<bmp.h;y+=48){ // картинка отправляется полосками по 48 строк
       var rr=Math.min(48,bmp.h-y);
-      ps.push(enc.encode('BITMAP 0,'+y+','+bmp.wb+','+rr+',0,'));
+      ps.push(enc.encode('BITMAP '+bmp.x+','+(bmp.y+y)+','+bmp.wb+','+rr+',0,'));
       ps.push(bmp.data.subarray(y*bmp.wb,(y+rr)*bmp.wb));
       ps.push(enc.encode('\r\n'));
     }
     ps.push(enc.encode('PRINT 1,1\r\n'));
-    var tot=0;ps.forEach(function(p){tot+=p.length});
-    var all=new Uint8Array(tot),pos=0;ps.forEach(function(p){all.set(p,pos);pos+=p.length});
-    var n=100,re=0;
-    for(var o=0;o<all.length;){
-      var part=all.slice(o,o+n);
-      try{if(chr.properties.write)await chr.writeValue(part);else await chr.writeValueWithoutResponse(part)}
-      catch(e){
-        if(/no longer valid|disconnected/i.test(e.message||'')&&re<2){re++;await link();if(!chr)throw e;continue}
-        if(n>20){n=20;continue}throw e}
-      o+=part.length;
-      st('Передача: '+Math.round(o/all.length*100)+'%');
-      await new Promise(function(r){setTimeout(r,chr.properties.write?5:30)});
-    }
-    await new Promise(function(r){setTimeout(r,500)});
+    await sendAll(ps);
     st('Отправлено на печать.');
   }catch(e){st('Ошибка печати: '+(e.message||e))}
+  upd();
+};
+
+$('cal').onclick=async function(){
+  if(!chr)return;
+  st('Калибрую датчик...');
+  if(!await reconnect())return;
+  try{
+    var p=paper(),enc=new TextEncoder();
+    await sendAll([enc.encode('SIZE '+p.mw+' mm,'+p.mh+' mm\r\nGAP '+p.gap+' mm,0 mm\r\nGAPDETECT\r\n')]);
+    st('Калибровка отправлена. Принтер протянет несколько этикеток.');
+  }catch(e){st('Ошибка: '+(e.message||e))}
+  upd();
+};
+
+// тест: рамка по краю этикетки — видно, где реально начинается и заканчивается печать
+$('tst').onclick=async function(){
+  if(!chr)return;
+  st('Печатаю тест...');
+  if(!await reconnect())return;
+  try{
+    var p=paper(),enc=new TextEncoder();
+    var x2=Math.round(p.hd*DPM)-1,y2=Math.round(p.mh*DPM)-1;
+    await sendAll([enc.encode(header(p)+'CLS\r\nBOX 0,0,'+x2+','+y2+',3\r\nBOX 8,8,'+(x2-8)+','+(y2-8)+',1\r\nPRINT 1,1\r\n')]);
+    st('Тест отправлен. Если рамка обрезана сверху/снизу — поправьте высоту или зазор, сбоку — ширину печати.');
+  }catch(e){st('Ошибка: '+(e.message||e))}
   upd();
 };
 </script></body></html>
