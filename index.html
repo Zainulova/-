@@ -85,17 +85,22 @@ async function build(){
   }catch(e){st('Не удалось прочитать PDF: '+(e.message||e))}
 }
 
+async function link(){
+  var srv=dev.gatt.connected?dev.gatt:await dev.gatt.connect();
+  var svcs=await srv.getPrimaryServices();chr=null;
+  for(var a=0;a<svcs.length&&!chr;a++){
+    var cs=await svcs[a].getCharacteristics();
+    for(var k=0;k<cs.length;k++){if(cs[k].properties.writeWithoutResponse||cs[k].properties.write){chr=cs[k];break}}
+  }
+  return chr;
+}
 $('bc').onclick=async function(){
   if(!navigator.bluetooth){st('Этот браузер не поддерживает Bluetooth. На iPhone откройте страницу в Bluefy, на Android в Chrome.');return}
   try{
     var u=function(n){return '0000'+n+'-0000-1000-8000-00805f9b34fb'};
     dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[u('18f0'),u('ff00'),u('ffe0'),u('fee7'),u('1101'),'49535343-fe7d-4ae5-8fa9-9fafd205e455','e7810a71-73ae-499d-8c15-faa9aef0c3f2']});
     st('Подключаюсь к '+(dev.name||'принтеру')+'...');
-    var srv=await dev.gatt.connect(),svcs=await srv.getPrimaryServices();chr=null;
-    for(var a=0;a<svcs.length&&!chr;a++){
-      var cs=await svcs[a].getCharacteristics();
-      for(var k=0;k<cs.length;k++){if(cs[k].properties.writeWithoutResponse||cs[k].properties.write){chr=cs[k];break}}
-    }
+    await link();
     if(!chr){st('Принтер найден, но канал для печати не обнаружен.');return}
     $('bc').textContent='Принтер: '+(dev.name||'подключён');
     st('Принтер подключён.');upd();
@@ -104,19 +109,21 @@ $('bc').onclick=async function(){
 
 $('pr').onclick=async function(){
   if(!(bmp&&chr))return;
-  if(!dev.gatt.connected){try{await dev.gatt.connect()}catch(e){st('Связь потеряна, подключите принтер заново.');chr=null;upd();return}}
   $('pr').disabled=true;st('Печатаю...');
+  try{await link();if(!chr)throw 0}catch(e){st('Связь потеряна, нажмите «Подключить принтер» заново.');upd();return}
   try{
     var gap=+$('g').value||0,dir=$('d').checked?1:0,enc=new TextEncoder();
     var head=enc.encode('SIZE '+bmp.mw+' mm,'+bmp.mh+' mm\r\nGAP '+gap+' mm,0 mm\r\nDIRECTION '+dir+',0\r\nDENSITY 10\r\nSPEED 4\r\nCLS\r\nBITMAP 0,0,'+bmp.wb+','+bmp.h+',0,');
     var tail=enc.encode('\r\nPRINT 1,1\r\n');
     var all=new Uint8Array(head.length+bmp.data.length+tail.length);
     all.set(head,0);all.set(bmp.data,head.length);all.set(tail,head.length+bmp.data.length);
-    var n=100;
+    var n=100,re=0;
     for(var o=0;o<all.length;){
       var part=all.slice(o,o+n);
       try{if(chr.properties.writeWithoutResponse)await chr.writeValueWithoutResponse(part);else await chr.writeValue(part)}
-      catch(e){if(n>20){n=20;continue}throw e}
+      catch(e){
+        if(/no longer valid|disconnected/i.test(e.message||'')&&re<2){re++;await link();if(!chr)throw e;continue}
+        if(n>20){n=20;continue}throw e}
       o+=part.length;
     }
     st('Отправлено на печать.');
