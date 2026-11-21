@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Печать этикеток</title>
+<style>
+:root{--bg:#f5f5f5;--fg:#1a1a1a;--card:#fff;--ac:#2fb5a8;--mut:#666;--bd:#ddd;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161616;--fg:#f0f0f0;--card:#242424;--mut:#aaa;--bd:#3a3a3a}}
+:root[data-theme="dark"]{--bg:#161616;--fg:#f0f0f0;--card:#242424;--mut:#aaa;--bd:#3a3a3a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:14px}
+.c{max-width:480px;margin:0 auto;background:var(--card);border-radius:16px;padding:16px}
+h1{font-size:22px;margin:0 0 10px}
+label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}
+select,input[type=file],input[type=number]{width:100%;font-size:16px;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);box-sizing:border-box}
+.ck{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:16px}
+.ck input{width:22px;height:22px}
+button{width:100%;margin-top:12px;padding:15px;font-size:18px;font-weight:600;border:0;border-radius:12px;background:var(--ac);color:#fff}
+button.s{background:var(--bd);color:var(--fg)}
+button:disabled{opacity:.4}
+#st{margin-top:12px;color:var(--mut);font-size:15px;min-height:22px}
+#pv{display:block;max-width:100%;margin:12px auto 0;border:1px solid var(--bd);background:#fff;image-rendering:pixelated}
+</style></head><body>
+<div class="c">
+<h1>Печать этикеток</h1>
+<button class="s" id="bc">1. Подключить принтер</button>
+<label>PDF файл</label>
+<input type="file" id="f" accept="application/pdf">
+<label>Какую этикетку печатать</label>
+<select id="w">
+<option value="br">НА ТОВАР (внизу справа)</option>
+<option value="bl">ОБРАЗЕЦ КУРЬЕРА (внизу слева)</option>
+<option value="tl">ОБРАЗЕЦ ПАРТНЕРА (вверху слева)</option>
+</select>
+<label>Размер бумаги</label>
+<select id="z"><option value="50x48">50 × 48 мм</option><option value="58x40">58 × 40 мм</option><option value="58x30">58 × 30 мм</option><option value="40x30">40 × 30 мм</option></select>
+<label>Зазор между этикетками, мм (0 для сплошной ленты)</label>
+<input type="number" id="g" value="2" min="0" max="10" step="0.5">
+<div class="ck"><input type="checkbox" id="r"><span>Повернуть этикетку на 90°</span></div>
+<div class="ck"><input type="checkbox" id="d"><span>Печатать вверх ногами (если вышло перевёрнуто)</span></div>
+<canvas id="pv"></canvas>
+<button id="pr" disabled>2. Печать</button>
+<div id="st">Сначала подключите принтер и выберите PDF</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// рамки этикеток в точках для шаблона 1860x2631: [x0,x1,y0,y1], y сверху
+var B={br:[942,1818,1385,2610],bl:[21,897,1385,2610],tl:[21,897,51,1276]};
+var $=function(i){return document.getElementById(i)};
+var file=null,bmp=null,chr=null,dev=null;
+var ids=['w','z','g','r','d'];
+try{var S=JSON.parse(localStorage.getItem('lbl')||'{}');ids.forEach(function(i){if(S[i]!==undefined){var e=$(i);if(e.type==='checkbox')e.checked=S[i];else e.value=S[i]}})}catch(e){}
+function save(){try{var o={};ids.forEach(function(i){var e=$(i);o[i]=e.type==='checkbox'?e.checked:e.value});localStorage.setItem('lbl',JSON.stringify(o))}catch(e){}}
+function st(t){$('st').textContent=t}
+function upd(){$('pr').disabled=!(bmp&&chr)}
+ids.forEach(function(i){$(i).onchange=function(){save();if(file)build()}});
+$('f').onchange=function(e){file=e.target.files[0]||null;bmp=null;upd();if(file)build()};
+
+async function build(){
+  st('Готовлю этикетку...');
+  try{
+    var pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+    var pg=await pdf.getPage(1),v=pg.getViewport({scale:1}),W=v.width,H=v.height,b=B[$('w').value];
+    var x0=b[0]/1860*W,y0=b[2]/2631*H,w=(b[1]-b[0])/1860*W,h=(b[3]-b[2])/2631*H;
+    var zz=$('z').value.split('x'),PW=+zz[0]*8,PH=+zz[1]*8,m=8,rot=$('r').checked;
+    var s=rot?Math.min((PW-2*m)/h,(PH-2*m)/w):Math.min((PW-2*m)/w,(PH-2*m)/h);
+    var big=document.createElement('canvas'),vs=pg.getViewport({scale:s});
+    big.width=Math.ceil(vs.width);big.height=Math.ceil(vs.height);
+    var bx=big.getContext('2d');bx.fillStyle='#fff';bx.fillRect(0,0,big.width,big.height);
+    await pg.render({canvasContext:bx,viewport:vs}).promise;
+    var cv=$('pv');cv.width=PW;cv.height=PH;
+    var c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,PW,PH);c.save();
+    if(!rot){c.translate(Math.round((PW-w*s)/2),Math.round((PH-h*s)/2));c.drawImage(big,x0*s,y0*s,w*s,h*s,0,0,w*s,h*s)}
+    else{c.translate(Math.round((PW+h*s)/2),Math.round((PH-w*s)/2));c.rotate(Math.PI/2);c.drawImage(big,x0*s,y0*s,w*s,h*s,0,0,w*s,h*s)}
+    c.restore();
+    var im=c.getImageData(0,0,PW,PH),p=im.data,wb=Math.ceil(PW/8),out=new Uint8Array(wb*PH).fill(255);
+    for(var y=0;y<PH;y++)for(var x=0;x<PW;x++){
+      var i=(y*PW+x)*4,g=.299*p[i]+.587*p[i+1]+.114*p[i+2],blk=g<170;
+      p[i]=p[i+1]=p[i+2]=blk?0:255;p[i+3]=255;
+      if(blk)out[y*wb+(x>>3)]&=~(0x80>>(x&7)); // в TSPL 0 = чёрная точка
+    }
+    c.putImageData(im,0,0);
+    bmp={data:out,wb:wb,h:PH,mw:+zz[0],mh:+zz[1]};
+    st('Готово. Нажмите «Печать».');upd();
+  }catch(e){st('Не удалось прочитать PDF: '+(e.message||e))}
+}
+
+async function link(){
+  var srv=dev.gatt.connected?dev.gatt:await dev.gatt.connect();
+  var svcs=await srv.getPrimaryServices();chr=null;
+  for(var a=0;a<svcs.length&&!chr;a++){
+    var cs=await svcs[a].getCharacteristics();
+    for(var k=0;k<cs.length;k++){if(cs[k].properties.writeWithoutResponse||cs[k].properties.write){chr=cs[k];break}}
+  }
+  return chr;
+}
+$('bc').onclick=async function(){
+  if(!navigator.bluetooth){st('Этот браузер не поддерживает Bluetooth. На iPhone откройте страницу в Bluefy, на Android в Chrome.');return}
+  try{
+    var u=function(n){return '0000'+n+'-0000-1000-8000-00805f9b34fb'};
+    dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[u('18f0'),u('ff00'),u('ffe0'),u('fee7'),u('1101'),'49535343-fe7d-4ae5-8fa9-9fafd205e455','e7810a71-73ae-499d-8c15-faa9aef0c3f2']});
+    st('Подключаюсь к '+(dev.name||'принтеру')+'...');
+    await link();
+    if(!chr){st('Принтер найден, но канал для печати не обнаружен.');return}
+    $('bc').textContent='Принтер: '+(dev.name||'подключён');
+    st('Принтер подключён.');upd();
+  }catch(e){st('Подключение не удалось: '+(e.message||e))}
+};
+
+$('pr').onclick=async function(){
+  if(!(bmp&&chr))return;
+  $('pr').disabled=true;st('Печатаю...');
+  try{await link();if(!chr)throw 0}catch(e){st('Связь потеряна, нажмите «Подключить принтер» заново.');upd();return}
+  try{
+    var gap=+$('g').value||0,dir=$('d').checked?1:0,enc=new TextEncoder();
+    var head=enc.encode('SIZE '+bmp.mw+' mm,'+bmp.mh+' mm\r\nGAP '+gap+' mm,0 mm\r\nDIRECTION '+dir+',0\r\nDENSITY 10\r\nSPEED 4\r\nCLS\r\nBITMAP 0,0,'+bmp.wb+','+bmp.h+',0,');
+    var tail=enc.encode('\r\nPRINT 1,1\r\n');
+    var all=new Uint8Array(head.length+bmp.data.length+tail.length);
+    all.set(head,0);all.set(bmp.data,head.length);all.set(tail,head.length+bmp.data.length);
+    var n=100,re=0;
+    for(var o=0;o<all.length;){
+      var part=all.slice(o,o+n);
+      try{if(chr.properties.write)await chr.writeValue(part);else await chr.writeValueWithoutResponse(part)}
+      catch(e){
+        if(/no longer valid|disconnected/i.test(e.message||'')&&re<2){re++;await link();if(!chr)throw e;continue}
+        if(n>20){n=20;continue}throw e}
+      o+=part.length;
+      st('Передача: '+Math.round(o/all.length*100)+'%');
+      await new Promise(function(r){setTimeout(r,chr.properties.write?5:30)});
+    }
+    await new Promise(function(r){setTimeout(r,500)});
+    st('Отправлено на печать.');
+  }catch(e){st('Ошибка печати: '+(e.message||e))}
+  upd();
+};
+</script></body></html>
